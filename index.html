@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<!-- Prevent zoom on mobile -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>Emoji Planner - Responsive Carousel</title>
+<style>
+  /* Basic resets & page background */
+  html, body {
+    margin:0; padding:0; width:100%; height:100%;
+    font-family: 'Segoe UI', sans-serif; font-weight:600;
+    background: linear-gradient(120deg, #daf3ff 0%, #b0d8f8 100%);
+    overflow:hidden; /* We'll only scroll in the categories area */
+  }
+
+  /* Container for the entire UI */
+  .app-container {
+    position:relative;
+    display:flex; flex-direction:column;
+    width:100%; height:100%;
+    background:rgba(255,255,255,0.5);
+    backdrop-filter:blur(4px);
+    box-sizing:border-box;
+  }
+
+  /* Header */
+  header {
+    background:rgba(176,216,248,0.5);
+    min-height:50px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 1rem; box-sizing:border-box;
+  }
+  header h1 {
+    margin:0; font-size:2rem; color:#024875;
+  }
+  .header-buttons {
+    display:flex; align-items:center; gap:0.5rem;
+  }
+  button {
+    background:linear-gradient(120deg, #b0d8f8, #cceeff);
+    border:none; border-radius:20px; padding:0.5rem 1rem; 
+    font-size:1rem; cursor:pointer; 
+    box-shadow:0 2px rgba(0,0,0,0.15);
+  }
+
+  /* Carousel wrapper => smaller shift so we never push containers fully off-screen. */
+  .carousel-wrapper {
+    position:relative; 
+    width:100%; 
+    flex-shrink:0;
+    overflow:visible;
+    margin-bottom:1rem; /* space above categories */
+  }
+  .carousel-inner {
+    display:flex; 
+    position:relative;
+    transition:transform 0.5s ease;
+    /* Instead of 300% width, we do something smaller or rely on container widths. */
+  }
+
+  /* Each day container => less than 100% wide so there's partial visibility of next container 
+     even on smaller screens. We'll do 90% for instance. Then we can do 0, -90%, -180% for slides. */
+  .sector {
+    flex-shrink:0;
+    width:90%; 
+    max-width:500px; /* so it doesn't get huge on large tablets */
+    margin:0 1rem; /* a bit of horizontal gap */
+    border-radius:12px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.1);
+    backdrop-filter:blur(6px);
+    background:rgba(176,216,248,0.5);
+    display:flex; flex-direction:column; align-items:center;
+    position:relative; transition:transform 0.5s;
+  }
+  .sector h2 {
+    margin:1rem 0; font-size:1.5rem; color:#024875;
+  }
+
+  /* The placeholders => 4 each => scaling down for smaller screens. 
+     We'll keep them in a 2×2 grid. 
+  */
+  .placeholder-grid {
+    display:grid; grid-template-columns:repeat(2,1fr); grid-template-rows:repeat(2,1fr);
+    gap:0.5rem; 
+    width:clamp(160px,60%,260px); 
+    height:clamp(160px,60%,260px);
+    margin-bottom:1rem;
+  }
+  .placeholder {
+    background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.5), rgba(176,216,248,0.3));
+    border:2px solid rgba(255,255,255,0.3);
+    border-radius:8px;
+    width:clamp(60px,5vw,120px);
+    height:clamp(60px,5vw,120px);
+    display:flex; align-items:center; justify-content:center;
+    color:#024875; 
+  }
+
+  /* Category deck => scrollable area at the bottom. */
+  .main-content {
+    flex:1; 
+    overflow-y:auto; 
+    background:rgba(255,255,255,0.2);
+    backdrop-filter:blur(4px);
+  }
+  .category-block {
+    background:rgba(255,255,255,0.2);
+    margin:1rem; border-radius:8px; padding:1rem; 
+  }
+  .emoji-grid {
+    display:grid; 
+    grid-template-columns:repeat(auto-fill,minmax(40px,1fr));
+    gap:6px;
+  }
+  .emoji-item {
+    background:#cce; 
+    border-radius:6px; 
+    text-align:center; 
+    padding:0.5rem; cursor:grab;
+  }
+
+  /* Drag fix => pinned under finger. */
+  .emoji-item.dragging {
+    position:fixed; z-index:9999; pointer-events:none; opacity:0.8; transform:scale(1.1);
+  }
+</style>
+</head>
+<body>
+<div class="app-container">
+  <header>
+    <h1>Emoji Planner</h1>
+    <div class="header-buttons">
+      <button id="resetBtn">Reset</button>
+      <button id="saveBtn">Save</button>
+    </div>
+  </header>
+
+  <!-- The horizontal day-sections carousel -->
+  <div class="carousel-wrapper">
+    <div class="carousel-inner" id="carouselInner">
+      <div class="sector" data-day="morning">
+        <h2>Morning</h2>
+        <div class="placeholder-grid" id="morningGrid"></div>
+      </div>
+      <div class="sector" data-day="midday">
+        <h2>Midday</h2>
+        <div class="placeholder-grid" id="middayGrid"></div>
+      </div>
+      <div class="sector" data-day="evening">
+        <h2>Evening</h2>
+        <div class="placeholder-grid" id="eveningGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-content" id="mainContent"></div>
+</div>
+
+<script>
+/* We'll define a layout => 4 placeholders each. Minimal approach. */
+let layout={
+  morning:[null,null,null,null],
+  midday:[null,null,null,null],
+  evening:[null,null,null,null]
+};
+
+/* On load => init placeholders => init categories => set default carousel to morning => attach taps. */
+function initAll(){
+  initSectors();
+  initCategories();
+  attachCarouselTaps();
+  setCarouselPosition('morning'); // show morning center by default
+}
+function initSectors(){
+  ['morning','midday','evening'].forEach(day=>{
+    const grid=document.getElementById(day+'Grid');
+    grid.innerHTML='';
+    layout[day].forEach(em=>{
+      const ph=document.createElement('div');
+      ph.className='placeholder';
+      if(em){
+        ph.textContent=em;
+      }
+      grid.appendChild(ph);
+    });
+  });
+}
+
+/* Minimal categories => just some example data */
+const catNames=["events","study","sport","hobbys","travel","party"];
+const baseEmojis=["📅","🏆","🎉","📚","⚽","🏀","🏊‍♀️","🏋️","🚴","🍕","🍔","🥗","🍩","☕","🎨","🎮","🏖","🕹","📱","💻"];
+function initCategories(){
+  const mainContent=document.getElementById('mainContent');
+  mainContent.innerHTML='';
+  catNames.forEach(cat=>{
+    const block=document.createElement('div');
+    block.className='category-block';
+    const h3=document.createElement('h3');
+    h3.textContent=cat;
+    block.appendChild(h3);
+
+    const grid=document.createElement('div');
+    grid.className='emoji-grid';
+    for(let i=0;i<20;i++){
+      const item=document.createElement('div');
+      item.className='emoji-item';
+      item.textContent=baseEmojis[i%baseEmojis.length];
+      item.addEventListener('touchstart',handleEmojiTouchStart);
+      grid.appendChild(item);
+    }
+    block.appendChild(grid);
+    mainContent.appendChild(block);
+  });
+}
+
+/* Carousel logic => we do "morning" => 0%, "midday" => -100%, "evening" => -200% 
+   but each container is only 90% wide, so there's a small leftover for partial visibility. */
+function setCarouselPosition(centerDay){
+  const ci=document.getElementById('carouselInner');
+  let x=0;
+  if(centerDay==='morning') x=0;
+  else if(centerDay==='midday') x=-100;
+  else if(centerDay==='evening') x=-200;
+  ci.style.transform=`translateX(${x}%)`;
+}
+function attachCarouselTaps(){
+  const sectors=document.querySelectorAll('.sector');
+  sectors.forEach(sec=>{
+    sec.addEventListener('click',()=>{
+      const day=sec.dataset.day;
+      setCarouselPosition(day);
+    });
+  });
+}
+
+/* Drag pinned under finger => minimal approach */
+let dragElement=null;
+function handleEmojiTouchStart(e){
+  e.preventDefault();
+  const touch=e.touches[0];
+  dragElement=e.currentTarget;
+  dragElement.classList.add('dragging');
+  positionDragElement(touch.clientX,touch.clientY);
+  document.addEventListener('touchmove',handleEmojiTouchMove,{passive:false});
+  document.addEventListener('touchend',handleEmojiTouchEnd);
+}
+function handleEmojiTouchMove(e){
+  e.preventDefault();
+  const touch=e.touches[0];
+  positionDragElement(touch.clientX,touch.clientY);
+}
+function handleEmojiTouchEnd(e){
+  document.removeEventListener('touchmove',handleEmojiTouchMove);
+  document.removeEventListener('touchend',handleEmojiTouchEnd);
+  if(dragElement){
+    dragElement.classList.remove('dragging');
+    dragElement.style.position='';
+    dragElement.style.left='';
+    dragElement.style.top='';
+    dragElement=null;
+  }
+}
+function positionDragElement(x,y){
+  if(dragElement){
+    const w=dragElement.offsetWidth;
+    const h=dragElement.offsetHeight;
+    dragElement.style.position='fixed';
+    dragElement.style.left=(x - w/2)+'px';
+    dragElement.style.top=(y - h/2)+'px';
+  }
+}
+
+/* Reset & Save => minimal approach */
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  layout={ morning:[null,null,null,null],
+           midday:[null,null,null,null],
+           evening:[null,null,null,null] };
+  initSectors();
+  alert("All Emojis are removed ❎");
+});
+document.getElementById('saveBtn').addEventListener('click',()=>{
+  alert("Saving placeholders... (not implemented).");
+});
+
+/* On load => init everything */
+initAll();
+</script>
+</body>
+</html>
